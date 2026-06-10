@@ -6,7 +6,7 @@ describe('DoneBox 任务详情显示文案', () => {
     const today = new Date('2026-06-10T09:00:00');
     const nextDay = new Date('2026-06-11T12:00:00').getTime();
 
-    expect(getDetailDateLabel(null, today)).toBe('日期');
+    expect(getDetailDateLabel(null, today)).toBe('截止日期');
     expect(getDetailDateLabel(today.getTime(), today)).toBe('今天');
     expect(getDetailDateLabel(nextDay, today)).toBe('2026/6/11');
   });

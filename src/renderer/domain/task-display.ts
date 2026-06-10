@@ -18,7 +18,7 @@ const repeatDetailLabels: Record<RepeatRule['type'], string> = {
 };
 
 export function getDetailDateLabel(value?: number | null, now = new Date()): string {
-  if (!value) return '日期';
+  if (!value) return '截止日期';
   if (isSameDay(value, now)) return '今天';
   return format(value, 'yyyy/M/d');
 }

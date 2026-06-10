@@ -72,8 +72,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
 import { Solar } from 'lunar-javascript';
@@ -297,7 +295,7 @@ export default function App(): React.ReactElement {
         listId: options.listId || parsed.listId,
         isDone: false,
         dueDate: options.dueDate ?? parsed.dueDate ?? (activeMenu === 'today' ? new Date().setHours(12, 0, 0, 0) : null),
-        tags: options.tags || parsed.tags,
+        tags: options.tags ? Array.from(new Set([...parsed.tags, ...options.tags])) : parsed.tags,
         subTasks: [],
         createdAt: now,
         updatedAt: now,
@@ -387,7 +385,7 @@ export default function App(): React.ReactElement {
         </main>
       </div>
       <AnimatePresence>{showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}</AnimatePresence>
-      <AnimatePresence>{isQuickAddOpen && <QuickAddModal activeLabel={activeLabel} taskApi={taskApi} onClose={() => setIsQuickAddOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{isQuickAddOpen && <QuickAddModal taskApi={taskApi} onClose={() => setIsQuickAddOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{isSearchOpen && <SearchModal tasks={tasks} lists={lists} onSelectTask={selectTask} onClose={() => setIsSearchOpen(false)} />}</AnimatePresence>
       <AnimatePresence>
         {isSettingsOpen && (
@@ -1101,10 +1099,10 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
         <div className="flex h-12 items-center justify-between border-b border-slate-100 px-4">
           <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={() => taskApi.toggleDone(task.id)} />
           <div className="flex items-center gap-1 text-slate-500">
-            <button title="置顶" className="rounded p-1.5 hover:bg-slate-100"><Pin className="h-4 w-4" /></button>
-            <button title="删除任务" className="rounded p-1.5 hover:bg-red-50 hover:text-red-500" onClick={deleteAndClose}><Trash2 className="h-4 w-4" /></button>
-            <button title="更多" className="rounded p-1.5 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
-            <button title="收起详情" className="rounded p-1.5 hover:bg-slate-100" onClick={onClose}><PanelRightClose className="h-4 w-4" /></button>
+            <button title="置顶" className="rounded p-1.5 transition-colors hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"><Pin className="h-4 w-4" /></button>
+            <button title="删除任务" className="rounded p-1.5 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:bg-red-50 focus-visible:text-red-500 focus-visible:outline-none" onClick={deleteAndClose}><Trash2 className="h-4 w-4" /></button>
+            <button title="更多" className="rounded p-1.5 transition-colors hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"><MoreHorizontal className="h-4 w-4" /></button>
+            <button title="收起详情" className="rounded p-1.5 transition-colors hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none" onClick={onClose}><PanelRightClose className="h-4 w-4" /></button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -1112,12 +1110,14 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
           <div className="space-y-5">
             <DetailField icon={Calendar} label="日期">
               <div className="relative flex items-center gap-2">
-                <button className="text-blue-500 hover:underline" onClick={() => openDatePicker(startDateRef.current)}>
+                <DetailDateButton testId="detail-start-button" onClick={() => openDatePicker(startDateRef.current)}>
                   {task.startDate ? getDetailDateLabel(task.startDate) : '开始日期'}
-                </button>
+                </DetailDateButton>
                 <span className="text-slate-300">-</span>
-                <button data-testid="detail-due-button" className="text-blue-500 hover:underline" onClick={() => openDatePicker(dueDateRef.current)}>{getDetailDateLabel(task.dueDate)}</button>
-                <label htmlFor={dueInputId} className="ml-auto cursor-pointer rounded p-1 text-slate-500 hover:bg-slate-100">
+                <DetailDateButton testId="detail-due-button" onClick={() => openDatePicker(dueDateRef.current)}>
+                  {getDetailDateLabel(task.dueDate)}
+                </DetailDateButton>
+                <label htmlFor={dueInputId} className="ml-auto cursor-pointer rounded p-1 text-slate-500 transition-colors hover:bg-slate-100">
                   <Calendar className="h-4 w-4" />
                 </label>
                 <input
@@ -1153,7 +1153,7 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
                   </div>
                   <div className="my-1 h-px bg-slate-100" />
                   {listOptions.map((list) => (
-                    <button key={list.id} className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { taskApi.updateTask(task.id, { listId: list.id }); setOpenDropdown(null); }}>
+                    <button key={list.id} className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => { taskApi.updateTask(task.id, { listId: list.id }); setOpenDropdown(null); }}>
                       <span className={cn('h-2 w-2 rounded-full', list.color)} />
                       {list.label}
                     </button>
@@ -1168,7 +1168,7 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
               {openDropdown === 'priority' && (
                 <DetailPopover className="w-[136px]">
                   {[0, 1, 2, 3].map((priority) => (
-                    <button key={priority} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50', priorityFlagColors[priority])} onClick={() => { taskApi.updateTask(task.id, { priority: priority as Priority }); setOpenDropdown(null); }}>
+                    <button key={priority} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none', priorityFlagColors[priority])} onClick={() => { taskApi.updateTask(task.id, { priority: priority as Priority }); setOpenDropdown(null); }}>
                       <Flag className="h-3.5 w-3.5" />
                       {getPriorityDetailLabel(priority as Priority)}
                     </button>
@@ -1182,7 +1182,7 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
                   const color = getTagColor(tag);
                   return <span key={tag} className={cn('rounded-[6px] px-2 py-1 text-xs', color.bg, color.text)}>#{getTagLabel(tag)}</span>;
                 })}
-                <button className="rounded-[6px] border border-dashed border-slate-300 px-2 py-0.5 text-slate-400">+</button>
+                <button className="rounded-[6px] border border-dashed border-slate-300 px-2 py-0.5 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600">+</button>
               </div>
             </DetailField>
             <DetailField icon={Bell} label="重复">
@@ -1192,7 +1192,7 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
               {openDropdown === 'repeat' && (
                 <DetailPopover className="w-[136px]">
                   {repeatDetailOptions.map((option) => (
-                    <button key={option.value || 'none'} className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50" onClick={() => { setRepeat(option.value); setOpenDropdown(null); }}>
+                    <button key={option.value || 'none'} className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => { setRepeat(option.value); setOpenDropdown(null); }}>
                       {option.label}
                     </button>
                   ))}
@@ -1207,7 +1207,6 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
               placeholder="添加描述..."
               className="min-h-[112px] w-full resize-none bg-transparent text-sm leading-6 text-slate-700 outline-none placeholder:text-slate-400"
             />
-            {task.content && <div className="prose prose-sm mt-3 max-w-none rounded-[8px] bg-slate-50 p-3"><ReactMarkdown remarkPlugins={[remarkGfm]}>{task.content}</ReactMarkdown></div>}
           </div>
           <div className="mt-7 border-t border-slate-100 pt-4">
             <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
@@ -1231,9 +1230,9 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
               </DetailSelectButton>
               {openDropdown === 'dependency' && (
                 <DetailPopover className="w-[220px]">
-                  <button className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-500 hover:bg-slate-50" onClick={() => { taskApi.updateTask(task.id, { blockedBy: [] }); setOpenDropdown(null); }}>无依赖</button>
+                  <button className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-500 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => { taskApi.updateTask(task.id, { blockedBy: [] }); setOpenDropdown(null); }}>无依赖</button>
                   {dependencyTasks.map((candidate) => (
-                    <button key={candidate.id} className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { taskApi.updateTask(task.id, { blockedBy: [candidate.id] }); setOpenDropdown(null); }}>{candidate.title}</button>
+                    <button key={candidate.id} className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => { taskApi.updateTask(task.id, { blockedBy: [candidate.id] }); setOpenDropdown(null); }}>{candidate.title}</button>
                   ))}
                 </DetailPopover>
               )}
@@ -1245,13 +1244,25 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
           </div>
         </div>
         <div className="border-t border-slate-100 p-4">
-          <button data-testid="detail-delete-button" className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-red-50 py-2 text-sm text-red-600 hover:bg-red-100" onClick={deleteAndClose}>
+          <button data-testid="detail-delete-button" className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-red-50 py-2 text-sm text-red-600 transition-colors hover:bg-red-100" onClick={deleteAndClose}>
             <Trash2 className="h-4 w-4" />
             删除任务
           </button>
         </div>
       </div>
     </motion.aside>
+  );
+}
+
+function DetailDateButton({ children, onClick, testId }: { children: React.ReactNode; onClick: () => void; testId?: string }): React.ReactElement {
+  return (
+    <button
+      data-testid={testId}
+      className="inline-flex items-center rounded-[6px] px-2 py-1 text-sm leading-none text-blue-500 transition-colors hover:bg-blue-50 focus-visible:bg-blue-50 focus-visible:outline-none"
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1269,7 +1280,7 @@ function DetailField({ icon: Icon, label, children }: { icon: typeof Calendar; l
 
 function DetailSelectButton({ children, onClick, className, testId }: { children: React.ReactNode; onClick: () => void; className?: string; testId?: string }): React.ReactElement {
   return (
-    <button data-testid={testId} className={cn('inline-flex max-w-full items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-left text-sm leading-none hover:bg-slate-50', className)} onClick={onClick}>
+    <button data-testid={testId} className={cn('inline-flex max-w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-left text-sm leading-none transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none', className)} onClick={onClick}>
       <span className="inline-flex min-w-0 items-center gap-1.5 truncate">{children}</span>
       <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
     </button>
@@ -1291,30 +1302,174 @@ function DetailPopover({ children, className }: { children: React.ReactNode; cla
   );
 }
 
-function QuickAddModal({ activeLabel, taskApi, onClose }: { activeLabel: string; taskApi: TaskApi; onClose: () => void }): React.ReactElement {
+type QuickAddDropdown = 'list' | 'priority' | 'tag' | null;
+
+function QuickAddModal({ taskApi, onClose }: { taskApi: TaskApi; onClose: () => void }): React.ReactElement {
   const [title, setTitle] = useState('');
+  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+  const [selectedList, setSelectedList] = useState<string | null>(null);
+  const [selectedPriority, setSelectedPriority] = useState<Priority>(0);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [openDropdown, setOpenDropdown] = useState<QuickAddDropdown>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const listOptions = [{ id: 'inbox', label: '未分类', color: 'bg-slate-400' }, ...taskApi.lists];
+  const selectedListOption = listOptions.find((list) => list.id === selectedList);
+  const canSave = title.trim().length > 0;
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
   const submit = (): void => {
-    if (!title.trim()) return;
-    taskApi.addTask(title);
+    if (!canSave) return;
+    const options: Partial<Task> = { priority: selectedPriority };
+    if (selectedDate !== null) options.dueDate = selectedDate;
+    if (selectedList) options.listId = selectedList;
+    if (selectedTags.length > 0) options.tags = selectedTags;
+    taskApi.addTask(title, options);
     onClose();
   };
+  const toggleTag = (tagId: string): void => {
+    setSelectedTags((current) => (current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId]));
+  };
   return (
-    <ModalFrame onClose={onClose}>
-      <div className="w-[520px] rounded-[14px] bg-white p-4 shadow-panel">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">快速添加</h2>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-40 flex items-start justify-center bg-slate-200/70 pt-[130px] backdrop-blur-[4px]"
+      onMouseDown={onClose}
+      data-testid="quick-add-overlay"
+    >
+      <motion.div
+        initial={{ scale: 0.98, y: 8 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.98, y: 8 }}
+        transition={{ duration: 0.16 }}
+        className="w-[680px] overflow-visible rounded-[13px] border border-slate-200/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
+        onMouseDown={(event) => event.stopPropagation()}
+        data-testid="quick-add-modal"
+      >
+        <div className="flex h-20 items-center px-6">
+          <input
+            ref={inputRef}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                submit();
+              }
+              if (event.key === 'Escape') onClose();
+            }}
+            placeholder="想做点什么?"
+            className="h-full w-full bg-transparent text-[28px] font-semibold leading-none text-slate-900 outline-none placeholder:text-slate-300"
+            data-testid="quick-add-title-input"
+          />
         </div>
-        <div className="flex h-12 items-center gap-3 rounded-[10px] border border-slate-200 px-3">
-          <Plus className="h-5 w-5 text-blue-500" />
-          <input ref={inputRef} value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); if (event.key === 'Escape') onClose(); }} placeholder={`添加任务至 "${activeLabel}"，回车保存`} className="flex-1 bg-transparent outline-none" />
+        <div className="flex h-14 items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-6">
+          <div className="relative">
+            <QuickAddToolButton icon={Calendar} label={selectedDate ? formatDate(selectedDate) : '日期'} onClick={() => openDatePicker(dateInputRef.current)} testId="quick-add-date-button" active={selectedDate !== null} />
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={dateInputValue(selectedDate)}
+              onChange={(event) => setSelectedDate(event.target.value ? new Date(event.target.value).setHours(12, 0, 0, 0) : null)}
+              className="absolute h-px w-px opacity-0"
+              tabIndex={-1}
+              data-testid="quick-add-date-input"
+            />
+          </div>
+          <div className="relative">
+            <QuickAddToolButton icon={Folder} label={selectedListOption?.label || '清单'} onClick={() => setOpenDropdown(openDropdown === 'list' ? null : 'list')} testId="quick-add-list-button" active={Boolean(selectedList)} />
+            {openDropdown === 'list' && (
+              <QuickAddPopover>
+                {listOptions.map((list) => (
+                  <button key={list.id} className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => { setSelectedList(list.id); setOpenDropdown(null); }}>
+                    <span className={cn('h-2 w-2 rounded-full', list.color)} />
+                    {list.label}
+                  </button>
+                ))}
+              </QuickAddPopover>
+            )}
+          </div>
+          <div className="relative">
+            <QuickAddToolButton icon={Flag} label={selectedPriority > 0 ? priorityShortLabels[selectedPriority] : '优先级'} onClick={() => setOpenDropdown(openDropdown === 'priority' ? null : 'priority')} testId="quick-add-priority-button" active={selectedPriority > 0} className={selectedPriority > 0 ? priorityFlagColors[selectedPriority] : undefined} />
+            {openDropdown === 'priority' && (
+              <QuickAddPopover>
+                {[0, 1, 2, 3].map((priority) => (
+                  <button key={priority} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none', priorityFlagColors[priority])} onClick={() => { setSelectedPriority(priority as Priority); setOpenDropdown(null); }}>
+                    <Flag className="h-3.5 w-3.5" />
+                    {priorityLabels[priority]}
+                  </button>
+                ))}
+              </QuickAddPopover>
+            )}
+          </div>
+          <div className="relative">
+            <QuickAddToolButton icon={Tag} label={selectedTags.length > 0 ? selectedTags.map((tag) => `#${getTagLabel(tag)}`).join(' ') : '标签'} onClick={() => setOpenDropdown(openDropdown === 'tag' ? null : 'tag')} testId="quick-add-tag-button" active={selectedTags.length > 0} className="max-w-[150px]" />
+            {openDropdown === 'tag' && (
+              <QuickAddPopover className="w-[180px]">
+                {taskApi.availableTags.map((tag) => {
+                  const selected = selectedTags.includes(tag.id);
+                  return (
+                    <button key={tag.id} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none" onClick={() => toggleTag(tag.id)}>
+                      <span className="truncate">#{tag.label}</span>
+                      {selected && <Check className="h-3.5 w-3.5 text-blue-500" />}
+                    </button>
+                  );
+                })}
+              </QuickAddPopover>
+            )}
+          </div>
+          <div className="h-6 w-px bg-slate-200" />
+          <button title="语音输入" className="rounded-[6px] p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:outline-none" onClick={() => inputRef.current?.focus()}>
+            <MicOff className="h-5 w-5" />
+          </button>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400">↵ 保存, Esc 取消</span>
+            <button
+              className={cn(
+                'h-9 rounded-[9px] px-4 text-sm font-medium transition-colors',
+                canSave ? 'bg-blue-500 text-white shadow-sm hover:bg-blue-600 focus-visible:bg-blue-600 focus-visible:outline-none' : 'cursor-default bg-slate-200 text-slate-400'
+              )}
+              disabled={!canSave}
+              onClick={submit}
+              data-testid="quick-add-save-button"
+            >
+              保存
+            </button>
+          </div>
         </div>
-      </div>
-    </ModalFrame>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function QuickAddToolButton({ icon: Icon, label, onClick, active, className, testId }: { icon: typeof Calendar; label: string; onClick: () => void; active?: boolean; className?: string; testId?: string }): React.ReactElement {
+  return (
+    <button
+      className={cn('flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:bg-slate-100 focus-visible:outline-none', active && 'bg-blue-50 text-blue-500', className)}
+      onClick={onClick}
+      data-testid={testId}
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function QuickAddPopover({ children, className }: { children: React.ReactNode; className?: string }): React.ReactElement {
+  return (
+    <motion.div
+      initial={{ y: -2, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: -2, opacity: 0 }}
+      transition={{ duration: 0.12 }}
+      className={cn('absolute left-0 top-9 z-50 w-[160px] overflow-hidden rounded-[10px] border border-slate-100 bg-white py-1 shadow-[0_16px_30px_rgba(15,23,42,0.16)]', className)}
+      data-testid="quick-add-popover"
+    >
+      {children}
+    </motion.div>
   );
 }
 

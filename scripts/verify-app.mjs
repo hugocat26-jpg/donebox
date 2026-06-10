@@ -129,12 +129,25 @@ const expectedUiFragments = [
   '四象限视图',
   '番茄钟',
   '添加任务至',
+  '想做点什么?',
+  '↵ 保存',
+  'Esc 取消',
   '搜索...'
 ];
 
 for (const fragment of expectedUiFragments) {
   if (!appSource.includes(fragment)) {
     failures.push(`源码缺少关键 UI 文案：${fragment}`);
+  }
+}
+
+const forbiddenUiFragments = [
+  '<h2 className="font-semibold">快速添加</h2>'
+];
+
+for (const fragment of forbiddenUiFragments) {
+  if (appSource.includes(fragment)) {
+    failures.push(`源码仍包含旧版添加任务弹层片段：${fragment}`);
   }
 }
 
