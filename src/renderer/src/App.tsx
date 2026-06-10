@@ -178,11 +178,6 @@ function formatMonthDay(value?: number | null): string {
   return format(value, 'M月d日', { locale: zhCN });
 }
 
-function dateInputValue(value?: number | null): string {
-  if (!value) return '';
-  return format(value, 'yyyy-MM-dd');
-}
-
 function getActiveLabel(activeMenu: ActiveMenu, lists: TaskList[], tags: CustomTag[]): string {
   if (activeMenu === 'inbox') return '未分类';
   if (activeMenu === 'today') return '今天';
@@ -749,6 +744,136 @@ function TaskCheckbox({ isDone, isBlocked, onClick }: { isDone: boolean; isBlock
   );
 }
 
+type DoneBoxDatePickerControls = {
+  isOpen: boolean;
+  toggle: () => void;
+  close: () => void;
+};
+
+function dateAtTime(date: Date, time: { hour: number; minute: number }): number {
+  const next = new Date(date);
+  next.setHours(time.hour, time.minute, 0, 0);
+  return next.getTime();
+}
+
+function DoneBoxDatePicker({
+  value,
+  onChange,
+  time = { hour: 12, minute: 0 },
+  testId = 'donebox-date-picker',
+  align = 'left',
+  className,
+  children
+}: {
+  value?: number | null;
+  onChange: (value: number | null) => void;
+  time?: { hour: number; minute: number };
+  testId?: string;
+  align?: 'left' | 'right';
+  className?: string;
+  children: (controls: DoneBoxDatePickerControls) => React.ReactNode;
+}): React.ReactElement {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(value ? new Date(value) : new Date()));
+  const rootRef = useRef<HTMLDivElement>(null);
+  const days = Array.from({ length: 42 }, (_, index) => addDays(startOfWeek(startOfMonth(visibleMonth), { weekStartsOn: 1 }), index));
+
+  const close = (): void => setIsOpen(false);
+  const toggle = (): void => {
+    setVisibleMonth(startOfMonth(value ? new Date(value) : new Date()));
+    setIsOpen((current) => !current);
+  };
+  const chooseDate = (date: Date): void => {
+    onChange(dateAtTime(date, time));
+    setIsOpen(false);
+  };
+  const clearDate = (): void => {
+    onChange(null);
+    setIsOpen(false);
+  };
+  const chooseToday = (): void => chooseDate(new Date());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleMouseDown = (event: MouseEvent): void => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={rootRef} className={cn('relative inline-flex items-center', className)}>
+      {children({ isOpen, toggle, close })}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -2 }}
+            transition={{ duration: 0.1 }}
+            className={cn(
+              'absolute top-8 z-[80] w-[218px] rounded-[3px] border border-slate-300 bg-white p-2 text-xs text-slate-900 shadow-[0_8px_18px_rgba(15,23,42,0.12)]',
+              align === 'right' ? 'right-0' : 'left-0'
+            )}
+            data-testid={testId}
+            data-component="donebox-date-picker"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <button className="rounded-[3px] px-1.5 py-1 text-[12px] font-semibold text-slate-900 hover:bg-slate-100" onClick={() => setVisibleMonth(new Date())}>
+                {format(visibleMonth, 'yyyy年MM月')}
+              </button>
+              <div className="flex items-center gap-1">
+                <button title="上个月" className="flex h-6 w-6 items-center justify-center rounded-[3px] text-slate-600 hover:bg-slate-100" onClick={() => setVisibleMonth(addMonths(visibleMonth, -1))}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <button title="下个月" className="flex h-6 w-6 items-center justify-center rounded-[3px] text-slate-600 hover:bg-slate-100" onClick={() => setVisibleMonth(addMonths(visibleMonth, 1))}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-0.5 text-center text-[12px] leading-6 text-slate-700">
+              {['一', '二', '三', '四', '五', '六', '日'].map((day) => <div key={day}>{day}</div>)}
+              {days.map((day) => {
+                const selected = Boolean(value && isSameDay(value, day));
+                return (
+                  <button
+                    key={day.toISOString()}
+                    aria-label={format(day, 'yyyy-MM-dd')}
+                    className={cn(
+                      'flex h-6 w-6 items-center justify-center rounded-[2px] text-[12px] leading-none hover:bg-slate-100',
+                      !isSameMonth(day, visibleMonth) && 'text-slate-400',
+                      selected && 'bg-blue-500 text-white hover:bg-blue-500'
+                    )}
+                    onClick={() => chooseDate(day)}
+                  >
+                    {format(day, 'd')}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2">
+              <button className="px-1 text-[12px] text-blue-500 hover:text-blue-600" onClick={clearDate}>清除</button>
+              <button className="px-1 text-[12px] text-blue-500 hover:text-blue-600" onClick={chooseToday}>今天</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function QuickInputBar(props: {
   title: string;
   setTitle: (title: string) => void;
@@ -777,10 +902,13 @@ function QuickInputBar(props: {
           className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-slate-400"
           placeholder={props.placeholder}
         />
-        <input className="hidden" type="date" id="quick-date" onChange={(event) => props.setSelectedDate(event.target.value ? new Date(event.target.value).setHours(12, 0, 0, 0) : null)} />
-        <label htmlFor="quick-date" title="选择日期" className="cursor-pointer rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-          <Calendar className="h-5 w-5" />
-        </label>
+        <DoneBoxDatePicker value={props.selectedDate} onChange={props.setSelectedDate} testId="quick-input-date-picker" align="right">
+          {({ toggle, isOpen }) => (
+            <button title="选择日期" className={cn('rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600', (props.selectedDate || isOpen) && 'bg-blue-50 text-blue-500')} onClick={toggle}>
+              <Calendar className="h-5 w-5" />
+            </button>
+          )}
+        </DoneBoxDatePicker>
         <label title="选择清单" className="relative rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
           <Folder className="h-5 w-5" />
           <select value={props.selectedList || ''} onChange={(event) => props.setSelectedList(event.target.value || null)} className="absolute inset-0 cursor-pointer opacity-0">
@@ -1051,28 +1179,14 @@ const repeatDetailOptions: Array<{ value: RepeatRule['type'] | ''; label: string
   { value: 'lunar', label: '农历' }
 ];
 
-function openDatePicker(input: HTMLInputElement | null): void {
-  if (!input) return;
-  const picker = input as HTMLInputElement & { showPicker?: () => void };
-  if (typeof picker.showPicker === 'function') {
-    picker.showPicker();
-    return;
-  }
-  input.click();
-}
-
 function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; taskApi: TaskApi; onClose: () => void; onSelectTask: (id: string) => void }): React.ReactElement {
   const [subTitle, setSubTitle] = useState('');
   const [openDropdown, setOpenDropdown] = useState<DetailDropdown>(null);
-  const startDateRef = useRef<HTMLInputElement>(null);
-  const dueDateRef = useRef<HTMLInputElement>(null);
   const dependencyTasks = taskApi.tasks.filter((candidate) => candidate.id !== task.id);
   const currentList = taskApi.lists.find((item) => item.id === task.listId);
   const listLabel = currentList?.label || (task.listId === 'inbox' ? '未分类' : task.listId);
   const listColor = currentList?.color || 'bg-slate-400';
   const listOptions = [{ id: 'inbox', label: '未分类', color: 'bg-slate-400' }, ...taskApi.lists];
-  const dueInputId = `detail-due-${task.id}`;
-  const startInputId = `detail-start-${task.id}`;
 
   useEffect(() => {
     setOpenDropdown(null);
@@ -1110,34 +1224,26 @@ function TaskDetail({ task, taskApi, onClose, onSelectTask }: { task: Task; task
           <div className="space-y-5">
             <DetailField icon={Calendar} label="日期">
               <div className="relative flex items-center gap-2">
-                <DetailDateButton testId="detail-start-button" onClick={() => openDatePicker(startDateRef.current)}>
-                  {task.startDate ? getDetailDateLabel(task.startDate) : '开始日期'}
-                </DetailDateButton>
+                <DoneBoxDatePicker value={task.startDate ?? null} onChange={(value) => taskApi.updateTask(task.id, { startDate: value })} time={{ hour: 9, minute: 0 }} testId="detail-start-date-picker">
+                  {({ toggle }) => (
+                    <DetailDateButton testId="detail-start-button" onClick={toggle}>
+                      {task.startDate ? getDetailDateLabel(task.startDate) : '开始日期'}
+                    </DetailDateButton>
+                  )}
+                </DoneBoxDatePicker>
                 <span className="text-slate-300">-</span>
-                <DetailDateButton testId="detail-due-button" onClick={() => openDatePicker(dueDateRef.current)}>
-                  {getDetailDateLabel(task.dueDate)}
-                </DetailDateButton>
-                <label htmlFor={dueInputId} className="ml-auto cursor-pointer rounded p-1 text-slate-500 transition-colors hover:bg-slate-100">
-                  <Calendar className="h-4 w-4" />
-                </label>
-                <input
-                  ref={startDateRef}
-                  id={startInputId}
-                  type="date"
-                  value={dateInputValue(task.startDate)}
-                  onChange={(event) => taskApi.updateTask(task.id, { startDate: event.target.value ? new Date(event.target.value).setHours(9, 0, 0, 0) : null })}
-                  className="absolute h-px w-px opacity-0"
-                  tabIndex={-1}
-                />
-                <input
-                  ref={dueDateRef}
-                  id={dueInputId}
-                  type="date"
-                  value={dateInputValue(task.dueDate)}
-                  onChange={(event) => taskApi.updateTask(task.id, { dueDate: event.target.value ? new Date(event.target.value).setHours(12, 0, 0, 0) : null })}
-                  className="absolute h-px w-px opacity-0"
-                  tabIndex={-1}
-                />
+                <DoneBoxDatePicker value={task.dueDate ?? null} onChange={(value) => taskApi.updateTask(task.id, { dueDate: value })} testId="detail-due-date-picker" align="right" className="flex flex-1">
+                  {({ toggle }) => (
+                    <>
+                      <DetailDateButton testId="detail-due-button" onClick={toggle}>
+                        {getDetailDateLabel(task.dueDate)}
+                      </DetailDateButton>
+                      <button title="选择截止日期" className="ml-auto cursor-pointer rounded p-1 text-slate-500 transition-colors hover:bg-slate-100" onClick={toggle}>
+                        <Calendar className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
+                </DoneBoxDatePicker>
               </div>
             </DetailField>
             <DetailField icon={Folder} label="清单">
@@ -1302,7 +1408,7 @@ function DetailPopover({ children, className }: { children: React.ReactNode; cla
   );
 }
 
-type QuickAddDropdown = 'list' | 'priority' | 'tag' | null;
+type QuickAddDropdown = 'date' | 'list' | 'priority' | 'tag' | null;
 
 function QuickAddModal({ taskApi, onClose }: { taskApi: TaskApi; onClose: () => void }): React.ReactElement {
   const [title, setTitle] = useState('');
@@ -1312,7 +1418,6 @@ function QuickAddModal({ taskApi, onClose }: { taskApi: TaskApi; onClose: () => 
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<QuickAddDropdown>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dateInputRef = useRef<HTMLInputElement>(null);
   const listOptions = [{ id: 'inbox', label: '未分类', color: 'bg-slate-400' }, ...taskApi.lists];
   const selectedListOption = listOptions.find((list) => list.id === selectedList);
   const canSave = title.trim().length > 0;
@@ -1347,6 +1452,7 @@ function QuickAddModal({ taskApi, onClose }: { taskApi: TaskApi; onClose: () => 
         transition={{ duration: 0.16 }}
         className="w-[680px] overflow-visible rounded-[13px] border border-slate-200/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
         onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}
         data-testid="quick-add-modal"
       >
         <div className="flex h-20 items-center px-6">
@@ -1367,18 +1473,11 @@ function QuickAddModal({ taskApi, onClose }: { taskApi: TaskApi; onClose: () => 
           />
         </div>
         <div className="flex h-14 items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-6">
-          <div className="relative">
-            <QuickAddToolButton icon={Calendar} label={selectedDate ? formatDate(selectedDate) : '日期'} onClick={() => openDatePicker(dateInputRef.current)} testId="quick-add-date-button" active={selectedDate !== null} />
-            <input
-              ref={dateInputRef}
-              type="date"
-              value={dateInputValue(selectedDate)}
-              onChange={(event) => setSelectedDate(event.target.value ? new Date(event.target.value).setHours(12, 0, 0, 0) : null)}
-              className="absolute h-px w-px opacity-0"
-              tabIndex={-1}
-              data-testid="quick-add-date-input"
-            />
-          </div>
+          <DoneBoxDatePicker value={selectedDate} onChange={setSelectedDate} testId="quick-add-date-picker">
+            {({ toggle, isOpen }) => (
+              <QuickAddToolButton icon={Calendar} label={selectedDate ? formatDate(selectedDate) : '日期'} onClick={() => { setOpenDropdown(null); toggle(); }} testId="quick-add-date-button" active={selectedDate !== null || isOpen} />
+            )}
+          </DoneBoxDatePicker>
           <div className="relative">
             <QuickAddToolButton icon={Folder} label={selectedListOption?.label || '清单'} onClick={() => setOpenDropdown(openDropdown === 'list' ? null : 'list')} testId="quick-add-list-button" active={Boolean(selectedList)} />
             {openDropdown === 'list' && (

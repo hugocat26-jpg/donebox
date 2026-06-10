@@ -132,6 +132,10 @@ const expectedUiFragments = [
   '想做点什么?',
   '↵ 保存',
   'Esc 取消',
+  'DoneBoxDatePicker',
+  'donebox-date-picker',
+  'quick-add-date-picker',
+  '清除',
   '搜索...'
 ];
 
@@ -142,12 +146,15 @@ for (const fragment of expectedUiFragments) {
 }
 
 const forbiddenUiFragments = [
-  '<h2 className="font-semibold">快速添加</h2>'
+  '<h2 className="font-semibold">快速添加</h2>',
+  'quick-add-date-input',
+  'type="date"',
+  'openDatePicker'
 ];
 
 for (const fragment of forbiddenUiFragments) {
   if (appSource.includes(fragment)) {
-    failures.push(`源码仍包含旧版添加任务弹层片段：${fragment}`);
+    failures.push(`源码仍包含旧版日期选择入口：${fragment}`);
   }
 }
 
