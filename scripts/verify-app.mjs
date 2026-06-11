@@ -61,7 +61,7 @@ const expectedMainFragments = [
   'createTray',
   'update-timer',
   'update-shortcut',
-  'focus-quick-add'
+  'donebox-quick-add'
 ];
 
 for (const fragment of expectedMainFragments) {
@@ -73,7 +73,7 @@ for (const fragment of expectedMainFragments) {
 const expectedPreloadFragments = [
   'update-shortcut',
   'update-timer',
-  'focus-quick-add',
+  'donebox-quick-add',
   'exposeInMainWorld',
   'electron'
 ];

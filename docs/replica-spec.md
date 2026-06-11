@@ -6,9 +6,9 @@
 
 ## 原项目技术栈
 
-- 应用形态：Electron Windows 便携版，入口程序名为 `focus.exe`。
+- 应用形态：Electron Windows 便携版，复刻版入口程序名为 `donebox.exe`。
 - 主进程：Electron CommonJS 产物，窗口尺寸 `1000 x 700`，隐藏菜单栏，`titleBarStyle: "hiddenInset"`，托盘图标，外链白名单。
-- 预加载脚本：通过 `contextBridge` 暴露 `window.electron.ipcRenderer`，只允许 `update-shortcut`、`update-timer` 发送，只允许监听 `focus-quick-add`。
+- 预加载脚本：通过 `contextBridge` 暴露 `window.electron.ipcRenderer`，只允许 `update-shortcut`、`update-timer` 发送，只允许监听 `donebox-quick-add`。
 - 渲染端：React 生产 bundle，Vite 风格入口，Tailwind CSS 输出。
 - 依赖痕迹：`@dnd-kit`、`framer-motion`、`localforage`、`chrono-node`、`date-fns`、`lunar-javascript`、`react-markdown`、`remark-gfm`、`lucide-react`、`tailwind-merge`。
 - 本地持久化：`localforage.config({ name: "ticktick-clone", storeName: "tasks" })`，主要键为 `tasks_list`、`custom_lists`、`custom_tags`，另有 `localStorage.removed_static_tags`。
@@ -79,7 +79,7 @@
 - 默认清单：`list-work`/`工作`/`bg-blue-400`，`list-personal`/`个人`/`bg-green-400`。
 - 默认标签：`urgent`/`紧急`，`reading`/`阅读`。
 - localforage key：`tasks_list`、`custom_lists`、`custom_tags`。
-- Electron IPC：Renderer -> Main `update-shortcut`、`update-timer`；Main -> Renderer `focus-quick-add`。
+- Electron IPC：Renderer -> Main `update-shortcut`、`update-timer`；Main -> Renderer `donebox-quick-add`。
 
 ## 构建、启动、测试方式
 
