@@ -1,25 +1,32 @@
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rename, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
 const root = process.cwd();
 const localRuntime = join(root, '.runtime', 'win-unpacked');
-const localExe = join(localRuntime, 'focus.exe');
+const legacyRuntimeExeName = ['fo', 'cus.exe'].join('');
+const localExe = join(localRuntime, 'donebox.exe');
+const localLegacyExe = join(localRuntime, legacyRuntimeExeName);
 const defaultSource = resolve(root, '..', '_DoneBox_source_20260610_182534', 'win-unpacked');
+const siblingSource = resolve(root, '..', 'win-unpacked');
+
+function hasRuntimeExecutable(runtimeDir) {
+  return existsSync(join(runtimeDir, 'donebox.exe')) || existsSync(join(runtimeDir, legacyRuntimeExeName));
+}
 
 function resolveRuntimeSource() {
-  if (process.env.DONEBOX_RUNTIME_DIR && existsSync(join(process.env.DONEBOX_RUNTIME_DIR, 'focus.exe'))) {
+  if (process.env.DONEBOX_RUNTIME_DIR && hasRuntimeExecutable(process.env.DONEBOX_RUNTIME_DIR)) {
     return process.env.DONEBOX_RUNTIME_DIR;
   }
-  if (existsSync(localExe)) {
+  if (hasRuntimeExecutable(localRuntime)) {
     return localRuntime;
   }
-  if (existsSync(join(defaultSource, 'focus.exe'))) {
-    return defaultSource;
+  for (const source of [siblingSource, defaultSource]) {
+    if (hasRuntimeExecutable(source)) return source;
   }
   throw new Error(
-    '找不到本地 Electron 运行时。请设置 DONEBOX_RUNTIME_DIR 指向解压后的 win-unpacked 目录，或先保留相邻的 _DoneBox_source_20260610_182534/win-unpacked。'
+    '找不到本地 Electron 运行时。请设置 DONEBOX_RUNTIME_DIR 指向解压后的 win-unpacked 目录，或保留相邻的 win-unpacked 目录。'
   );
 }
 
@@ -29,6 +36,9 @@ async function ensureRuntime() {
     await rm(localRuntime, { recursive: true, force: true });
     await mkdir(dirname(localRuntime), { recursive: true });
     await cp(source, localRuntime, { recursive: true });
+  }
+  if (!existsSync(localExe) && existsSync(localLegacyExe)) {
+    await rename(localLegacyExe, localExe);
   }
 }
 

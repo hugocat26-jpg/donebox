@@ -69,7 +69,7 @@
     ],
     "win": {
       "icon": "resources/icon.png",
-      "executableName": "focus",
+      "executableName": "donebox",
       "target": [
         {
           "target": "portable",

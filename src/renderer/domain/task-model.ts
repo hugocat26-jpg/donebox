@@ -62,29 +62,137 @@ function dayAtNoon(base: Date): Date {
   return date;
 }
 
-function isMatrixUrgent(task: Task, referenceDate: Date): boolean {
-  return Boolean(task.dueDate && task.dueDate <= addDays(referenceDate, 1).getTime());
+type MatrixTask = Task & {
+  important: boolean;
+  urgentOverride: boolean | null;
+};
+
+type MatrixPatch = Pick<Task, 'important' | 'urgentOverride' | 'sortOrder'>;
+
+const legacyMatrixByPriority: Record<Task['priority'], Pick<MatrixTask, 'important' | 'urgentOverride'>> = {
+  3: { important: true, urgentOverride: true },
+  2: { important: true, urgentOverride: false },
+  1: { important: false, urgentOverride: true },
+  0: { important: false, urgentOverride: false }
+};
+
+const matrixQuadrantPatch: Record<MatrixQuadrant, Pick<MatrixTask, 'important' | 'urgentOverride'>> = {
+  'important-urgent': { important: true, urgentOverride: true },
+  'important-not-urgent': { important: true, urgentOverride: false },
+  'not-important-urgent': { important: false, urgentOverride: true },
+  'not-important-not-urgent': { important: false, urgentOverride: false }
+};
+
+const matrixQuadrantWeight: Record<MatrixQuadrant, number> = {
+  'important-urgent': 0,
+  'important-not-urgent': 1,
+  'not-important-urgent': 2,
+  'not-important-not-urgent': 3
+};
+
+function hasOwnTaskField(task: Task, field: keyof Task): boolean {
+  return Object.prototype.hasOwnProperty.call(task, field);
 }
 
-function nonUrgentDueDate(task: Task, referenceDate: Date): number | null {
-  return isMatrixUrgent(task, referenceDate) ? null : task.dueDate ?? null;
+export function normalizeTaskForMatrix(task: Task): MatrixTask {
+  const hasMatrixFields = hasOwnTaskField(task, 'important') || hasOwnTaskField(task, 'urgentOverride');
+  const legacy = legacyMatrixByPriority[task.priority];
+  const important = hasMatrixFields ? task.important ?? false : legacy.important;
+  const urgentOverride = hasMatrixFields ? task.urgentOverride ?? null : legacy.urgentOverride;
+  const sortOrder = Number.isFinite(task.sortOrder) ? task.sortOrder : undefined;
+  return { ...task, important, urgentOverride, sortOrder };
+}
+
+export function resolveTaskUrgency(task: Task, referenceDate = new Date()): boolean {
+  const normalized = normalizeTaskForMatrix(task);
+  if (normalized.urgentOverride !== null) return normalized.urgentOverride;
+  if (!normalized.dueDate) return false;
+  const dueDay = startOfDay(new Date(normalized.dueDate)).getTime();
+  const today = startOfDay(referenceDate).getTime();
+  const afterTomorrow = addDays(startOfDay(referenceDate), 2).getTime();
+  return dueDay < today || dueDay < afterTomorrow;
 }
 
 export function getMatrixQuadrant(task: Task, referenceDate = new Date()): MatrixQuadrant {
-  const important = task.priority >= 2;
-  const urgent = isMatrixUrgent(task, referenceDate);
+  const normalized = normalizeTaskForMatrix(task);
+  const important = normalized.important;
+  const urgent = resolveTaskUrgency(normalized, referenceDate);
   if (important && urgent) return 'important-urgent';
   if (important) return 'important-not-urgent';
   if (urgent) return 'not-important-urgent';
   return 'not-important-not-urgent';
 }
 
-export function getMatrixPatchForQuadrant(task: Task, quadrant: MatrixQuadrant, referenceDate = new Date()): Pick<Task, 'priority' | 'dueDate'> {
-  const urgentDueDate = dayAtNoon(referenceDate).getTime();
-  if (quadrant === 'important-urgent') return { priority: 3, dueDate: urgentDueDate };
-  if (quadrant === 'important-not-urgent') return { priority: 2, dueDate: nonUrgentDueDate(task, referenceDate) };
-  if (quadrant === 'not-important-urgent') return { priority: 1, dueDate: urgentDueDate };
-  return { priority: 0, dueDate: nonUrgentDueDate(task, referenceDate) };
+function compareNumberWithNullsLast(left?: number | null, right?: number | null): number {
+  const leftHasValue = typeof left === 'number';
+  const rightHasValue = typeof right === 'number';
+  if (leftHasValue && rightHasValue) return left - right;
+  if (leftHasValue) return -1;
+  if (rightHasValue) return 1;
+  return 0;
+}
+
+function compareStableTaskFallback(left: Task, right: Task): number {
+  const priorityResult = right.priority - left.priority;
+  if (priorityResult !== 0) return priorityResult;
+  const dueDateResult = compareNumberWithNullsLast(left.dueDate, right.dueDate);
+  if (dueDateResult !== 0) return dueDateResult;
+  const createdAtResult = left.createdAt - right.createdAt;
+  if (createdAtResult !== 0) return createdAtResult;
+  return left.id.localeCompare(right.id);
+}
+
+function compareMatrixTasksInQuadrant(left: Task, right: Task): number {
+  const leftHasSort = typeof left.sortOrder === 'number';
+  const rightHasSort = typeof right.sortOrder === 'number';
+  if (leftHasSort && rightHasSort) {
+    const sortResult = (left.sortOrder as number) - (right.sortOrder as number);
+    if (sortResult !== 0) return sortResult;
+    return compareStableTaskFallback(left, right);
+  }
+  if (leftHasSort) return -1;
+  if (rightHasSort) return 1;
+  return compareStableTaskFallback(left, right);
+}
+
+export function sortMatrixTasks(tasks: Task[], referenceDate = new Date()): Task[] {
+  return [...tasks].sort((left, right) => {
+    const leftQuadrant = getMatrixQuadrant(left, referenceDate);
+    const rightQuadrant = getMatrixQuadrant(right, referenceDate);
+    const quadrantResult = matrixQuadrantWeight[leftQuadrant] - matrixQuadrantWeight[rightQuadrant];
+    if (quadrantResult !== 0) return quadrantResult;
+    return compareMatrixTasksInQuadrant(normalizeTaskForMatrix(left), normalizeTaskForMatrix(right));
+  });
+}
+
+function matrixSortAnchor(task: Task, index: number): number {
+  return typeof task.sortOrder === 'number' ? task.sortOrder : (index + 1) * 1000;
+}
+
+export function getNextMatrixSortOrder(targetTasks: Task[], overId?: string | null, referenceDate = new Date()): number {
+  const ordered = sortMatrixTasks(targetTasks, referenceDate);
+  if (ordered.length === 0) return 1000;
+  const overIndex = overId ? ordered.findIndex((task) => task.id === overId) : -1;
+  if (overIndex === -1) return matrixSortAnchor(ordered[ordered.length - 1], ordered.length - 1) + 1000;
+  const nextAnchor = matrixSortAnchor(ordered[overIndex], overIndex);
+  if (overIndex === 0) return nextAnchor / 2;
+  const previousAnchor = matrixSortAnchor(ordered[overIndex - 1], overIndex - 1);
+  return (previousAnchor + nextAnchor) / 2;
+}
+
+export function getMatrixPatchForQuadrant(
+  task: Task,
+  quadrant: MatrixQuadrant,
+  targetTasks: Task[] = [],
+  overId?: string | null,
+  referenceDate = new Date()
+): MatrixPatch {
+  const patch = matrixQuadrantPatch[quadrant];
+  const targetWithoutTask = targetTasks.filter((targetTask) => targetTask.id !== task.id);
+  return {
+    ...patch,
+    sortOrder: getNextMatrixSortOrder(targetWithoutTask, overId, referenceDate)
+  };
 }
 
 export function generateSampleTasks(referenceDate = new Date(), idFactory = createId): Task[] {
@@ -370,6 +478,8 @@ export function importFromObsidian(markdown: string, idFactory: (prefix?: string
         subTasks: [],
         content: '',
         priority: 0,
+        important: false,
+        urgentOverride: null,
         listId: 'inbox',
         createdAt: Date.now(),
         updatedAt: Date.now()

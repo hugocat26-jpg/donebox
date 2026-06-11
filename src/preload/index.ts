@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const sendChannels = new Set(['update-shortcut', 'update-timer']);
-const listenChannels = new Set(['focus-quick-add']);
+const listenChannels = new Set(['donebox-quick-add']);
 
 const electronApi = {
   ipcRenderer: {

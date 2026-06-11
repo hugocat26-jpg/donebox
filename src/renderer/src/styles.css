@@ -50,3 +50,13 @@ button {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+
+.matrix-task-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.matrix-task-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.38);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}

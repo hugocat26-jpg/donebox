@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   collapsedSidebarStyles,
   getCollapsedSidebarButtonClass,
+  getSidebarCountSlotClass,
+  getSidebarCountTextClass,
+  getSidebarDeleteActionClass,
   getSidebarSectionClass,
+  shouldRenderSidebarCount,
   shouldRenderSidebarBrand
 } from './sidebar-styles';
 
@@ -44,5 +48,33 @@ describe('折叠侧栏样式契约', () => {
     expect(getSidebarSectionClass(true)).toContain('mt-3');
     expect(getSidebarSectionClass(true)).not.toContain('mt-8');
     expect(getSidebarSectionClass(false)).toContain('mt-8');
+  });
+
+  it('展开态侧栏数量槽位固定在右侧并复用为删除入口', () => {
+    const inactiveSlot = getSidebarCountSlotClass(false);
+    const activeSlot = getSidebarCountSlotClass(true);
+
+    expect(inactiveSlot).toContain('ml-auto');
+    expect(inactiveSlot).toContain('w-6');
+    expect(inactiveSlot).toContain('shrink-0');
+    expect(inactiveSlot).toContain('group/sidebar-action');
+    expect(inactiveSlot).toContain('text-slate-400');
+    expect(activeSlot).toContain('text-white/90');
+  });
+
+  it('数量为 0 时不渲染数字，保留正数显示', () => {
+    expect(shouldRenderSidebarCount(undefined)).toBe(false);
+    expect(shouldRenderSidebarCount(0)).toBe(false);
+    expect(shouldRenderSidebarCount(4)).toBe(true);
+  });
+
+  it('可删除项在同一数量槽位内悬停替换为删除图标', () => {
+    expect(getSidebarCountTextClass(false)).toBe('transition-opacity');
+    expect(getSidebarCountTextClass(true)).toContain('group-hover/sidebar-action:opacity-0');
+    expect(getSidebarDeleteActionClass(false)).toContain('absolute inset-0');
+    expect(getSidebarDeleteActionClass(false)).toContain('opacity-0');
+    expect(getSidebarDeleteActionClass(false)).toContain('group-hover/sidebar-action:opacity-100');
+    expect(getSidebarDeleteActionClass(false)).toContain('hover:bg-slate-300/70');
+    expect(getSidebarDeleteActionClass(true)).toContain('hover:bg-white/20');
   });
 });

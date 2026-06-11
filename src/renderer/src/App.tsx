@@ -1,5 +1,6 @@
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
@@ -7,7 +8,8 @@ import {
   useDroppable,
   useSensor,
   useSensors,
-  type DragEndEvent
+  type DragEndEvent,
+  type DragStartEvent
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -78,9 +80,16 @@ import { Solar } from 'lunar-javascript';
 import {
   collapsedSidebarStyles,
   getSidebarButtonClass,
+  getSidebarCountSlotClass,
+  getSidebarCountTextClass,
+  getSidebarDeleteActionClass,
   getSidebarSectionClass,
+  shouldRenderSidebarCount,
   shouldRenderSidebarBrand
 } from './sidebar-styles';
+import { getDatePickerDayClass, isDatePickerDayVisuallySelected } from './date-picker-styles';
+import { shouldCloseDetailFromOutsideClick } from './blank-canvas-click';
+import { getTimelineTaskSpan } from './timeline-span';
 import {
   getDetailDateLabel,
   getPriorityDetailLabel,
@@ -97,12 +106,14 @@ import {
   filterTasks,
   getMatrixPatchForQuadrant,
   getMatrixQuadrant,
+  getNextMatrixSortOrder,
   getNextSelectedTaskId,
   getTagLabel,
   getVisibleTasksForMenu,
   importFromObsidian,
   isTaskBlocked,
   mergeTags,
+  sortMatrixTasks,
   toggleTaskDone
 } from '../domain/task-model';
 import type { ActiveMenu, CustomTag, MatrixQuadrant, Priority, RepeatRule, Task, TaskList, ViewMode } from '../domain/types';
@@ -258,7 +269,7 @@ export default function App(): React.ReactElement {
   }, [customTags, isLoading]);
 
   useEffect(() => {
-    const off = window.electron?.ipcRenderer.on('focus-quick-add', () => setIsQuickAddOpen(true));
+    const off = window.electron?.ipcRenderer.on('donebox-quick-add', () => setIsQuickAddOpen(true));
     return () => off?.();
   }, []);
 
@@ -268,6 +279,13 @@ export default function App(): React.ReactElement {
   const selectTask = useCallback((id: string) => {
     setSelectedTaskId((current) => getNextSelectedTaskId(current, id));
   }, []);
+  const closeSelectedTask = useCallback(() => {
+    setSelectedTaskId(null);
+  }, []);
+  const handleAppMouseDownCapture = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
+    if (!selectedTaskId || !shouldCloseDetailFromOutsideClick(event)) return;
+    setSelectedTaskId(null);
+  }, [selectedTaskId]);
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
     setTasks((current) => current.map((task) => (task.id === id ? { ...task, ...patch, updatedAt: Date.now() } : task)));
@@ -294,7 +312,10 @@ export default function App(): React.ReactElement {
         subTasks: [],
         createdAt: now,
         updatedAt: now,
-        priority: (options.priority as Priority | undefined) ?? 0
+        priority: (options.priority as Priority | undefined) ?? 0,
+        important: options.important ?? false,
+        urgentOverride: options.urgentOverride ?? null,
+        sortOrder: options.sortOrder
       };
       setTasks((current) => [task, ...current]);
       return task;
@@ -334,7 +355,7 @@ export default function App(): React.ReactElement {
   const taskApi = { tasks, lists, availableTags, addTask, updateTask, deleteTask, toggleDone, reorderTasks, setTasks };
 
   return (
-    <div className="h-screen overflow-hidden bg-white text-text-main font-body">
+    <div className="h-screen overflow-hidden bg-white text-text-main font-body" onMouseDownCapture={handleAppMouseDownCapture}>
       <div className="flex h-full">
         <Sidebar
           tasks={tasks}
@@ -369,12 +390,12 @@ export default function App(): React.ReactElement {
                   {viewMode === 'kanban' && <KanbanView tasks={filteredTasks} taskApi={taskApi} onSelectTask={selectTask} />}
                   {viewMode === 'calendar' && <CalendarView tasks={filteredTasks} onSelectTask={selectTask} />}
                   {viewMode === 'timeline' && <TimelineView tasks={filteredTasks} taskApi={taskApi} onSelectTask={selectTask} />}
-                  {viewMode === 'matrix' && <MatrixView tasks={filteredTasks} taskApi={taskApi} onSelectTask={selectTask} />}
+                  {viewMode === 'matrix' && <MatrixView tasks={filteredTasks} taskApi={taskApi} selectedTaskId={selectedTaskId} onSelectTask={selectTask} />}
                 </>
               )}
             </section>
             <AnimatePresence>
-              {selectedTask && <TaskDetail task={selectedTask} taskApi={taskApi} onClose={() => setSelectedTaskId(null)} onSelectTask={selectTask} />}
+              {selectedTask && <TaskDetail task={selectedTask} taskApi={taskApi} onClose={closeSelectedTask} onSelectTask={selectTask} />}
             </AnimatePresence>
           </div>
         </main>
@@ -542,6 +563,7 @@ function SidebarButton(props: {
   deleteTitle?: string;
 }): React.ReactElement {
   const Icon = props.icon;
+  const hasCount = shouldRenderSidebarCount(props.count);
   return (
     <button
       className={getSidebarButtonClass(props.collapsed, props.active)}
@@ -551,18 +573,28 @@ function SidebarButton(props: {
       {Icon && <Icon className={cn('h-[1.05rem] w-[1.05rem]', props.active ? 'text-white' : props.color)} />}
       {props.dot && <span className={cn('h-2 w-2 rounded-full', props.active ? 'bg-white' : props.dot)} />}
       {!props.collapsed && <span className="min-w-0 flex-1 truncate font-medium">{props.label}</span>}
-      {!props.collapsed && props.count ? <span className={cn('text-xs', props.active ? 'text-white/90' : 'text-slate-400')}>{props.count}</span> : null}
-      {!props.collapsed && props.onDelete && (
+      {!props.collapsed && (
         <span
-          role="button"
-          title={props.deleteTitle}
-          className={cn('rounded p-1 opacity-0 transition-opacity group-hover:opacity-100', props.active ? 'hover:bg-white/20' : 'hover:bg-slate-300/70')}
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onDelete?.();
-          }}
+          className={getSidebarCountSlotClass(props.active)}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          {hasCount && (
+            <span className={getSidebarCountTextClass(Boolean(props.onDelete))}>
+              {props.count}
+            </span>
+          )}
+          {props.onDelete && (
+            <span
+              role="button"
+              title={props.deleteTitle}
+              className={getSidebarDeleteActionClass(props.active)}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onDelete?.();
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </span>
+          )}
         </span>
       )}
     </button>
@@ -625,7 +657,19 @@ function Header(props: {
   );
 }
 
-function TaskListView({ tasks, activeLabel, activeMenu, taskApi, onSelectTask }: { tasks: Task[]; activeLabel: string; activeMenu: ActiveMenu; taskApi: TaskApi; onSelectTask: (id: string) => void }): React.ReactElement {
+function TaskListView({
+  tasks,
+  activeLabel,
+  activeMenu,
+  taskApi,
+  onSelectTask
+}: {
+  tasks: Task[];
+  activeLabel: string;
+  activeMenu: ActiveMenu;
+  taskApi: TaskApi;
+  onSelectTask: (id: string) => void;
+}): React.ReactElement {
   const [title, setTitle] = useState('');
   const [selectedDate, setSelectedDate] = useState<number | null>(null);
   const [selectedList, setSelectedList] = useState<string | null>(null);
@@ -694,6 +738,7 @@ function TaskRow({ task, taskApi, onSelectTask }: { task: Task; taskApi: TaskApi
   const listLabel = list?.label || (task.listId === 'inbox' ? '未分类' : task.listId);
   return (
     <motion.div
+      data-task-id={task.id}
       layout
       className={cn(
         'group flex cursor-pointer items-start gap-3 rounded-[8px] border border-transparent px-0 py-2 transition-colors hover:bg-slate-50/40',
@@ -846,16 +891,12 @@ function DoneBoxDatePicker({
             <div className="grid grid-cols-7 gap-0.5 text-center text-[12px] leading-6 text-slate-700">
               {['一', '二', '三', '四', '五', '六', '日'].map((day) => <div key={day}>{day}</div>)}
               {days.map((day) => {
-                const selected = Boolean(value && isSameDay(value, day));
+                const selected = isDatePickerDayVisuallySelected(day, value);
                 return (
                   <button
                     key={day.toISOString()}
                     aria-label={format(day, 'yyyy-MM-dd')}
-                    className={cn(
-                      'flex h-6 w-6 items-center justify-center rounded-[2px] text-[12px] leading-none hover:bg-slate-100',
-                      !isSameMonth(day, visibleMonth) && 'text-slate-400',
-                      selected && 'bg-blue-500 text-white hover:bg-blue-500'
-                    )}
+                    className={getDatePickerDayClass(day, visibleMonth, selected)}
                     onClick={() => chooseDate(day)}
                   >
                     {format(day, 'd')}
@@ -973,7 +1014,7 @@ function KanbanView({ tasks, taskApi, onSelectTask }: { tasks: Task[]; taskApi: 
 function TaskCard({ task, taskApi, onSelectTask }: { task: Task; taskApi: TaskApi; onSelectTask: (id: string) => void }): React.ReactElement {
   const list = taskApi.lists.find((item) => item.id === task.listId);
   return (
-    <button className="w-full rounded-[8px] border border-slate-200 bg-white px-3 py-3 text-left shadow-sm hover:border-blue-200" onClick={() => onSelectTask(task.id)}>
+    <button data-task-id={task.id} className="w-full rounded-[8px] border border-slate-200 bg-white px-3 py-3 text-left shadow-sm hover:border-blue-200" onClick={() => onSelectTask(task.id)}>
       <div className="flex items-start gap-2">
         <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={(event) => { event.stopPropagation(); taskApi.toggleDone(task.id); }} />
         <div className="min-w-0 flex-1">
@@ -1024,6 +1065,7 @@ function CalendarView({ tasks, onSelectTask }: { tasks: Task[]; onSelectTask: (i
                 {tasks.filter((task) => task.dueDate && isSameDay(task.dueDate, day)).slice(0, 3).map((task) => (
                   <button
                     key={task.id}
+                    data-task-id={task.id}
                     className={cn(
                       'block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px]',
                       task.priority >= 3 ? 'bg-red-50 text-red-600' : task.priority === 2 ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-blue-600'
@@ -1056,48 +1098,107 @@ function TimelineView({ tasks, taskApi, onSelectTask }: { tasks: Task[]; taskApi
             <div className="bg-slate-50 p-3 text-sm font-semibold text-slate-500">任务列表</div>
             {dates.map((date) => <div key={date.toISOString()} className="border-l border-slate-100 p-2 text-center text-xs text-slate-400">{format(date, 'M/d')}</div>)}
           </div>
-          {tasks.map((task) => (
-            <div key={task.id} className="grid min-h-[48px] grid-cols-[240px_repeat(14,1fr)] border-b border-slate-100">
-              <button className="flex items-center gap-2 bg-slate-50/40 p-3 text-left text-sm hover:bg-slate-100/70" onClick={() => onSelectTask(task.id)}>
-                <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={(event) => { event.stopPropagation(); taskApi.toggleDone(task.id); }} />
-                <span className={cn('truncate', task.isDone && 'text-slate-400 line-through')}>{task.title}</span>
-              </button>
-              {dates.map((date) => {
-                const active = task.dueDate && date >= startOfDay(new Date(task.startDate || task.dueDate)) && date <= startOfDay(new Date(task.dueDate));
-                return <div key={date.toISOString()} className="relative border-l border-slate-100 p-2">{active && <div className="h-6 rounded-full bg-blue-500/80" />}</div>;
-              })}
-            </div>
-          ))}
+          {tasks.map((task) => {
+            const span = getTimelineTaskSpan(task, dates);
+            return (
+              <div key={task.id} className="grid min-h-[48px] grid-cols-[240px_repeat(14,1fr)] border-b border-slate-100">
+                <button data-task-id={task.id} className="flex items-center gap-2 bg-slate-50/40 p-3 text-left text-sm hover:bg-slate-100/70" onClick={() => onSelectTask(task.id)}>
+                  <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={(event) => { event.stopPropagation(); taskApi.toggleDone(task.id); }} />
+                  <span className={cn('truncate', task.isDone && 'text-slate-400 line-through')}>{task.title}</span>
+                </button>
+                <div className="relative col-[2/-1] grid grid-cols-[repeat(14,minmax(0,1fr))]">
+                  {dates.map((date) => <div key={date.toISOString()} className="border-l border-slate-100 p-2" />)}
+                  {span && (
+                    <button
+                      type="button"
+                      data-task-id={task.id}
+                      aria-label={`打开任务：${task.title}`}
+                      title={task.title}
+                      className="absolute top-2 z-10 m-0 block h-6 appearance-none rounded-full border-0 bg-blue-500/80 p-0 leading-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300"
+                      style={{
+                        left: `${(span.startIndex / dates.length) * 100}%`,
+                        width: `${((span.endIndex - span.startIndex + 1) / dates.length) * 100}%`
+                      }}
+                      onClick={() => onSelectTask(task.id)}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function MatrixView({ tasks, taskApi, onSelectTask }: { tasks: Task[]; taskApi: TaskApi; onSelectTask: (id: string) => void }): React.ReactElement {
+function MatrixView({
+  tasks,
+  taskApi,
+  selectedTaskId,
+  onSelectTask
+}: {
+  tasks: Task[];
+  taskApi: TaskApi;
+  selectedTaskId: string | null;
+  onSelectTask: (id: string) => void;
+}): React.ReactElement {
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const sortedTasks = useMemo(() => sortMatrixTasks(tasks), [tasks]);
   const groups: Array<{ id: MatrixQuadrant; tasks: Task[] }> = matrixQuadrantIds.map((id) => ({
     id,
-    tasks: tasks.filter((task) => getMatrixQuadrant(task) === id)
+    tasks: sortedTasks.filter((task) => getMatrixQuadrant(task) === id)
   }));
+  const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) || null : null;
+  const handleDragStart = (event: DragStartEvent): void => {
+    setActiveTaskId(String(event.active.id));
+  };
   const handleDragEnd = (event: DragEndEvent): void => {
-    if (!isMatrixQuadrantId(event.over?.id)) return;
+    setActiveTaskId(null);
     const task = tasks.find((item) => item.id === event.active.id);
-    if (!task || getMatrixQuadrant(task) === event.over.id) return;
-    taskApi.updateTask(task.id, getMatrixPatchForQuadrant(task, event.over.id));
+    if (!task || !event.over) return;
+    const overId = String(event.over.id);
+    const overTask = tasks.find((item) => item.id === overId) || null;
+    const targetQuadrant = isMatrixQuadrantId(overId) ? overId : overTask ? getMatrixQuadrant(overTask) : null;
+    if (!targetQuadrant) return;
+    const sourceQuadrant = getMatrixQuadrant(task);
+    const targetTasks = groups.find((group) => group.id === targetQuadrant)?.tasks.filter((item) => item.id !== task.id) ?? [];
+    const overTaskId = overTask && overTask.id !== task.id ? overTask.id : null;
+    if (sourceQuadrant === targetQuadrant) {
+      if (overId === task.id) return;
+      taskApi.updateTask(task.id, { sortOrder: getNextMatrixSortOrder(targetTasks, overTaskId) });
+      return;
+    }
+    taskApi.updateTask(task.id, getMatrixPatchForQuadrant(task, targetQuadrant, targetTasks, overTaskId));
   };
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveTaskId(null)}>
       <div className="grid flex-1 grid-cols-2 grid-rows-2 gap-6 overflow-hidden p-6">
         {groups.map((group) => (
-          <MatrixQuadrantSection key={group.id} group={group} taskApi={taskApi} onSelectTask={onSelectTask} />
+          <MatrixQuadrantSection key={group.id} group={group} taskApi={taskApi} selectedTaskId={selectedTaskId} activeTaskId={activeTaskId} onSelectTask={onSelectTask} />
         ))}
       </div>
+      <DragOverlay dropAnimation={null}>
+        {activeTask ? <MatrixTaskCardOverlay task={activeTask} taskApi={taskApi} selected={selectedTaskId === activeTask.id} /> : null}
+      </DragOverlay>
     </DndContext>
   );
 }
 
-function MatrixQuadrantSection({ group, taskApi, onSelectTask }: { group: { id: MatrixQuadrant; tasks: Task[] }; taskApi: TaskApi; onSelectTask: (id: string) => void }): React.ReactElement {
+function MatrixQuadrantSection({
+  group,
+  taskApi,
+  selectedTaskId,
+  activeTaskId,
+  onSelectTask
+}: {
+  group: { id: MatrixQuadrant; tasks: Task[] };
+  taskApi: TaskApi;
+  selectedTaskId: string | null;
+  activeTaskId: string | null;
+  onSelectTask: (id: string) => void;
+}): React.ReactElement {
   const { isOver, setNodeRef } = useDroppable({ id: group.id });
   const meta = matrixQuadrantMeta[group.id];
   return (
@@ -1123,8 +1224,17 @@ function MatrixQuadrantSection({ group, taskApi, onSelectTask }: { group: { id: 
         {group.tasks.length === 0 ? (
           <span>拖拽任务至此</span>
         ) : (
-          <div className="h-full space-y-3 overflow-y-auto pr-1">
-            {group.tasks.map((task) => <MatrixTaskCard key={task.id} task={task} taskApi={taskApi} onSelectTask={onSelectTask} />)}
+          <div className="matrix-task-scrollbar h-full space-y-3 overflow-y-auto pr-1">
+            {group.tasks.map((task) => (
+              <MatrixTaskCard
+                key={task.id}
+                task={task}
+                taskApi={taskApi}
+                selected={selectedTaskId === task.id}
+                dragging={activeTaskId === task.id}
+                onSelectTask={onSelectTask}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -1132,38 +1242,67 @@ function MatrixQuadrantSection({ group, taskApi, onSelectTask }: { group: { id: 
   );
 }
 
-function MatrixTaskCard({ task, taskApi, onSelectTask }: { task: Task; taskApi: TaskApi; onSelectTask: (id: string) => void }): React.ReactElement {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
-  const list = taskApi.lists.find((item) => item.id === task.listId);
-  const meta = matrixQuadrantMeta[getMatrixQuadrant(task)];
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 }
-    : {};
+function getMatrixTaskCardClass({ selected, dragging, overlay, over }: { selected: boolean; dragging: boolean; overlay: boolean; over: boolean }): string {
+  return cn(
+    'block w-full cursor-grab rounded-[12px] border bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-blue-200 active:cursor-grabbing',
+    selected ? 'border-blue-300 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]' : 'border-slate-100',
+    over && !dragging && 'border-blue-200',
+    dragging && 'opacity-35',
+    overlay && 'pointer-events-none opacity-95 shadow-panel'
+  );
+}
+
+function MatrixTaskCard({ task, taskApi, selected, dragging, onSelectTask }: { task: Task; taskApi: TaskApi; selected: boolean; dragging: boolean; onSelectTask: (id: string) => void }): React.ReactElement {
+  const { attributes, listeners, setNodeRef: setDraggableNodeRef } = useDraggable({ id: task.id });
+  const { isOver, setNodeRef: setDroppableNodeRef } = useDroppable({ id: task.id });
+  const setNodeRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      setDraggableNodeRef(node);
+      setDroppableNodeRef(node);
+    },
+    [setDraggableNodeRef, setDroppableNodeRef]
+  );
   return (
     <button
+      data-task-id={task.id}
       ref={setNodeRef}
-      style={style}
       {...listeners}
       {...attributes}
-      className={cn('block w-full cursor-grab rounded-[12px] border border-slate-100 bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-blue-200 active:cursor-grabbing', isDragging && 'opacity-80 shadow-panel')}
+      className={getMatrixTaskCardClass({ selected, dragging, overlay: false, over: isOver })}
       onClick={() => onSelectTask(task.id)}
     >
-      <div className="flex items-start gap-3">
-        <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={(event) => { event.stopPropagation(); taskApi.toggleDone(task.id); }} />
-        <div className="min-w-0 flex-1">
-          <div className={cn('truncate text-sm font-semibold text-slate-900', task.isDone && 'text-slate-400 line-through')}>{task.title}</div>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            {task.dueDate && (
-              <span className={cn('flex items-center gap-1 font-semibold', meta.taskDate)}>
-                <Calendar className="h-3.5 w-3.5" />
-                {formatCompactDate(task.dueDate)}
-              </span>
-            )}
-            {list && <span className="flex items-center gap-1 text-slate-400"><span className={cn('h-1.5 w-1.5 rounded-full', list.color)} />{list.label}</span>}
-          </div>
+      <MatrixTaskCardBody task={task} taskApi={taskApi} />
+    </button>
+  );
+}
+
+function MatrixTaskCardOverlay({ task, taskApi, selected }: { task: Task; taskApi: TaskApi; selected: boolean }): React.ReactElement {
+  return (
+    <div data-testid="matrix-drag-overlay" className={getMatrixTaskCardClass({ selected, dragging: false, overlay: true, over: false })}>
+      <MatrixTaskCardBody task={task} taskApi={taskApi} isOverlay />
+    </div>
+  );
+}
+
+function MatrixTaskCardBody({ task, taskApi, isOverlay = false }: { task: Task; taskApi: TaskApi; isOverlay?: boolean }): React.ReactElement {
+  const list = taskApi.lists.find((item) => item.id === task.listId);
+  const meta = matrixQuadrantMeta[getMatrixQuadrant(task)];
+  return (
+    <div className="flex items-start gap-3">
+      <TaskCheckbox isDone={task.isDone} isBlocked={isTaskBlocked(task, taskApi.tasks)} onClick={(event) => { event.stopPropagation(); if (!isOverlay) taskApi.toggleDone(task.id); }} />
+      <div className="min-w-0 flex-1">
+        <div className={cn('truncate text-sm font-semibold text-slate-900', task.isDone && 'text-slate-400 line-through')}>{task.title}</div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          {task.dueDate && (
+            <span className={cn('flex items-center gap-1 font-semibold', meta.taskDate)}>
+              <Calendar className="h-3.5 w-3.5" />
+              {formatCompactDate(task.dueDate)}
+            </span>
+          )}
+          {list && <span className="flex items-center gap-1 text-slate-400"><span className={cn('h-1.5 w-1.5 rounded-full', list.color)} />{list.label}</span>}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

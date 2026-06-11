@@ -26,6 +26,9 @@ export interface Task {
   createdAt: number;
   updatedAt: number;
   priority: Priority;
+  important?: boolean;
+  urgentOverride?: boolean | null;
+  sortOrder?: number;
   blockedBy?: string[];
   repeatRule?: RepeatRule;
   ebbinghaus?: boolean;

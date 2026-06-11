@@ -25,6 +25,24 @@ export function getSidebarButtonClass(collapsed: boolean, active: boolean): stri
   return `group mb-1 flex h-9 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[15px] transition-colors ${state}`;
 }
 
+export function shouldRenderSidebarCount(count?: number): boolean {
+  return Boolean(count);
+}
+
+export function getSidebarCountSlotClass(active: boolean): string {
+  const color = active ? 'text-white/90' : 'text-slate-400';
+  return `group/sidebar-action relative ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs ${color}`;
+}
+
+export function getSidebarCountTextClass(canDelete: boolean): string {
+  return `transition-opacity${canDelete ? ' group-hover/sidebar-action:opacity-0' : ''}`;
+}
+
+export function getSidebarDeleteActionClass(active: boolean): string {
+  const hover = active ? 'hover:bg-white/20' : 'hover:bg-slate-300/70';
+  return `absolute inset-0 flex items-center justify-center rounded opacity-0 transition-opacity group-hover/sidebar-action:opacity-100 ${hover}`;
+}
+
 export function getCollapsedSidebarButtonClass(active: boolean): string {
   return getSidebarButtonClass(true, active);
 }

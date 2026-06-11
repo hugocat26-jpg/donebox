@@ -7,9 +7,13 @@ import {
   generateSampleTasks,
   getMatrixPatchForQuadrant,
   getMatrixQuadrant,
+  getNextMatrixSortOrder,
   getNextSelectedTaskId,
   getVisibleTasksForMenu,
   importFromObsidian,
+  normalizeTaskForMatrix,
+  resolveTaskUrgency,
+  sortMatrixTasks,
   toggleTaskDone
 } from './task-model';
 import type { Task } from './types';
@@ -109,7 +113,30 @@ describe('DoneBox 任务领域模型', () => {
     expect(imported[0].subTasks[0]).toMatchObject({ id: 'sub-new', title: '子任务', isDone: true });
   });
 
-  it('四象限拖拽能生成目标象限所需的任务字段变化', () => {
+  it('旧数据按 priority 完整归一化到原四象限', () => {
+    const baseTask: Task = {
+      id: 'matrix-legacy',
+      title: '矩阵任务',
+      listId: 'inbox',
+      isDone: false,
+      dueDate: noon(5),
+      tags: [],
+      subTasks: [],
+      priority: 0,
+      createdAt: 1,
+      updatedAt: 1
+    };
+    const now = new Date('2026-06-10T09:00:00');
+
+    expect(getMatrixQuadrant({ ...baseTask, priority: 3 }, now)).toBe('important-urgent');
+    expect(getMatrixQuadrant({ ...baseTask, priority: 2 }, now)).toBe('important-not-urgent');
+    expect(getMatrixQuadrant({ ...baseTask, priority: 1 }, now)).toBe('not-important-urgent');
+    expect(getMatrixQuadrant({ ...baseTask, priority: 0 }, now)).toBe('not-important-not-urgent');
+    expect(normalizeTaskForMatrix({ ...baseTask, priority: 2 })).toMatchObject({ important: true, urgentOverride: false });
+    expect(baseTask).not.toHaveProperty('important');
+  });
+
+  it('urgentOverride 覆盖日期，null 时按 dueDate 自动判断紧急性', () => {
     const baseTask: Task = {
       id: 'matrix-1',
       title: '矩阵任务',
@@ -124,19 +151,57 @@ describe('DoneBox 任务领域模型', () => {
     };
     const now = new Date('2026-06-10T09:00:00');
 
-    const urgentPatch = getMatrixPatchForQuadrant(baseTask, 'important-urgent', now);
-    expect(getMatrixQuadrant({ ...baseTask, ...urgentPatch }, now)).toBe('important-urgent');
-    expect(urgentPatch.priority).toBe(3);
-    expect(urgentPatch.dueDate).toBe(noon());
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: true }, now)).toBe(true);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: false, dueDate: noon() }, now)).toBe(false);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: null, dueDate: noon(-1) }, now)).toBe(true);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: null, dueDate: noon() }, now)).toBe(true);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: null, dueDate: noon(1) }, now)).toBe(true);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: null, dueDate: noon(2) }, now)).toBe(false);
+    expect(resolveTaskUrgency({ ...baseTask, urgentOverride: null, dueDate: null, startDate: noon(-1) }, now)).toBe(false);
+  });
 
-    const urgentSourceTask: Task = { ...baseTask, dueDate: noon(), priority: 3 };
-    const plannedPatch = getMatrixPatchForQuadrant(urgentSourceTask, 'important-not-urgent', now);
-    expect(getMatrixQuadrant({ ...urgentSourceTask, ...plannedPatch }, now)).toBe('important-not-urgent');
-    expect(plannedPatch.priority).toBe(2);
-    expect(plannedPatch.dueDate).toBeNull();
+  it('四象限拖拽 patch 只写象限字段和目标象限内 sortOrder', () => {
+    const baseTask: Task = {
+      id: 'matrix-1',
+      title: '矩阵任务',
+      listId: 'inbox',
+      isDone: false,
+      dueDate: noon(5),
+      startDate: noon(-1),
+      tags: [],
+      subTasks: [],
+      priority: 3,
+      important: true,
+      urgentOverride: true,
+      sortOrder: 10,
+      createdAt: 1,
+      updatedAt: 1
+    };
+    const targetTasks: Task[] = [
+      { ...baseTask, id: 'target-a', priority: 2, important: true, urgentOverride: false, sortOrder: 1000, createdAt: 2 },
+      { ...baseTask, id: 'target-b', priority: 1, important: true, urgentOverride: false, sortOrder: 2000, createdAt: 3 }
+    ];
 
-    const lowUrgentPatch = getMatrixPatchForQuadrant(baseTask, 'not-important-urgent', now);
-    expect(getMatrixQuadrant({ ...baseTask, ...lowUrgentPatch }, now)).toBe('not-important-urgent');
-    expect(lowUrgentPatch.priority).toBe(1);
+    const patch = getMatrixPatchForQuadrant(baseTask, 'important-not-urgent', targetTasks, 'target-b');
+
+    expect(patch).toEqual({ important: true, urgentOverride: false, sortOrder: 1500 });
+    expect(patch).not.toHaveProperty('priority');
+    expect(patch).not.toHaveProperty('dueDate');
+    expect(patch).not.toHaveProperty('startDate');
+    expect(getMatrixQuadrant({ ...baseTask, ...patch }, new Date('2026-06-10T09:00:00'))).toBe('important-not-urgent');
+  });
+
+  it('四象限排序稳定且重要不紧急优先于紧急不重要', () => {
+    const now = new Date('2026-06-10T09:00:00');
+    const tasks: Task[] = [
+      { id: 'later', title: '无顺序低优先', listId: 'inbox', isDone: false, dueDate: noon(2), tags: [], subTasks: [], priority: 0, important: true, urgentOverride: false, createdAt: 4, updatedAt: 4 },
+      { id: 'urgent-low', title: '紧急不重要', listId: 'inbox', isDone: false, dueDate: noon(), tags: [], subTasks: [], priority: 3, important: false, urgentOverride: true, createdAt: 1, updatedAt: 1 },
+      { id: 'manual-b', title: '手动顺序后', listId: 'inbox', isDone: false, dueDate: noon(5), tags: [], subTasks: [], priority: 0, important: true, urgentOverride: false, sortOrder: 2000, createdAt: 3, updatedAt: 3 },
+      { id: 'manual-a', title: '手动顺序前', listId: 'inbox', isDone: false, dueDate: noon(5), tags: [], subTasks: [], priority: 0, important: true, urgentOverride: false, sortOrder: 1000, createdAt: 2, updatedAt: 2 },
+      { id: 'high', title: '无顺序高优先', listId: 'inbox', isDone: false, dueDate: noon(3), tags: [], subTasks: [], priority: 3, important: true, urgentOverride: false, createdAt: 5, updatedAt: 5 }
+    ];
+
+    expect(sortMatrixTasks(tasks, now).map((task) => task.id)).toEqual(['manual-a', 'manual-b', 'high', 'later', 'urgent-low']);
+    expect(getNextMatrixSortOrder(tasks.filter((task) => task.important), 'manual-b', now)).toBe(1500);
   });
 });

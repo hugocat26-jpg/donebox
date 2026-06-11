@@ -43,19 +43,19 @@ function openExternalIfAllowed(rawUrl: string): void {
   }
 }
 
-function focusQuickAdd(): void {
+function openDoneboxQuickAdd(): void {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
-  mainWindow.webContents.send('focus-quick-add');
+  mainWindow.webContents.send('donebox-quick-add');
 }
 
 function registerShortcut(shortcut: string): void {
   globalShortcut.unregister(currentShortcut);
   currentShortcut = shortcut;
   try {
-    globalShortcut.register(currentShortcut, focusQuickAdd);
+    globalShortcut.register(currentShortcut, openDoneboxQuickAdd);
   } catch (error) {
     console.error('Failed to register shortcut', error);
   }
@@ -67,7 +67,7 @@ function createTray(): void {
   tray.setToolTip('DoneBox');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Show App', click: focusQuickAdd },
+      { label: 'Show App', click: openDoneboxQuickAdd },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() }
     ])
