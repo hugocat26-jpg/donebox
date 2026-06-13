@@ -10,10 +10,14 @@
 npm install
 npm run dev
 npm test
+npm run build:app
+npm run verify:app
 npm run build
 ```
 
 `npm run dev` 会先用 `electron-vite` 生成 `out`，再通过本地 `.runtime/win-unpacked` 启动应用。若本地没有 `.runtime`，脚本会尝试使用当前工作区相邻的 `_DoneBox_source_20260610_182534/win-unpacked` 生成本地运行时。
+
+`npm test` 只运行源码层单元测试和类型检查，不依赖 `out/`。`npm run verify:app` 用于校验 `npm run build:app` 生成的应用构建产物。干净源码解压后执行 `npm install`，再运行 `npm run build` 或 `npm run dist` 会按 `test -> build:app -> verify:app -> 打包` 的顺序完成。
 
 ## 目录
 

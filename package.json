@@ -12,9 +12,10 @@
     "dev:electron": "electron-vite dev",
     "build:app": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run && npm run typecheck && node scripts/verify-app.mjs",
-    "build": "npm run test && npm run build:app && electron-builder --dir",
-    "dist": "npm run test && npm run build:app && electron-builder --win portable"
+    "test": "vitest run && npm run typecheck",
+    "verify:app": "node scripts/verify-app.mjs",
+    "build": "npm run test && npm run build:app && npm run verify:app && electron-builder --dir",
+    "dist": "npm run test && npm run build:app && npm run verify:app && electron-builder --win portable"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
