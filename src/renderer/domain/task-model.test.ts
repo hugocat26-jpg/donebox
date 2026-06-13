@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CUSTOM_TAGS_KEY,
   DEFAULT_TAGS,
   INITIAL_LISTS,
+  LISTS_KEY,
+  TASKS_KEY,
   exportToObsidian,
   filterTasks,
   generateSampleTasks,
@@ -31,6 +34,12 @@ describe('DoneBox 任务领域模型', () => {
       { id: 'list-personal', label: '个人', color: 'bg-green-400' }
     ]);
     expect(DEFAULT_TAGS).toEqual(['urgent', 'reading']);
+  });
+
+  it('保护本地存储 key 契约', () => {
+    expect(TASKS_KEY).toBe('tasks_list');
+    expect(LISTS_KEY).toBe('custom_lists');
+    expect(CUSTOM_TAGS_KEY).toBe('custom_tags');
   });
 
   it('生成原应用可见的首次启动示例任务', () => {
